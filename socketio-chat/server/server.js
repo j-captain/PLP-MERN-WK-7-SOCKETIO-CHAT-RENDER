@@ -44,13 +44,13 @@ const storage = multer.diskStorage({
     const uploadDir = path.join(__dirname, 'uploads');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
-      console.log(colorful.success(`Created upload directory: ${uploadDir}`));
+      console.log(`Created upload directory: ${uploadDir}`);
     }
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     const filename = `${Date.now()}-${file.originalname}`;
-    console.log(colorful.debug(`Storing file as: ${filename}`));
+    console.log(`Storing file as: ${filename}`);
     cb(null, filename);
   }
 });
@@ -67,7 +67,6 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
   setHeaders: (res, path) => {
     const contentType = mime.lookup(path);
     res.setHeader('Content-Type', contentType);
-    console.log(colorful.debug(`Serving file: ${path} as ${contentType}`));
   }
 }));
 
@@ -75,13 +74,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
 app.post('/upload', upload.single('file'), (req, res) => {
   try {
     if (!req.file) {
-      console.log(colorful.error('✗ No file uploaded'));
       return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
-    
-    console.log(FILE_UPLOAD_ART);
-    console.log(colorful.success(`✓ File uploaded: ${req.file.originalname}`));
-    console.log(colorful.debug(`⚡ File saved at: ${req.file.path}`));
     
     const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
     
@@ -93,7 +87,6 @@ app.post('/upload', upload.single('file'), (req, res) => {
       type: req.file.mimetype
     });
   } catch (err) {
-    console.log(colorful.error(`✗ File upload error: ${err.message}`));
     res.status(500).json({ success: false, error: 'File upload failed' });
   }
 });
@@ -131,10 +124,8 @@ const corsOptions = {
     if (!origin) return callback(null, true);
     
     if (allowedOrigins.includes(origin)) {
-      console.log(colorful.success(`✓ Allowed origin: ${origin}`));
       callback(null, true);
     } else {
-      console.log(colorful.error(`✗ Blocked origin: ${origin}`));
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -294,9 +285,7 @@ app.get('/', (req, res) => {
 // Socket.IO setup
 const io = new Server(server, {
   cors: {
-    origin: isProduction 
-      ? ['https://plp-mern-wk-5-web-sockets.onrender.com', 'https://plp-mern-wk-5-web-sockets-frontend.onrender.com', 'https://admin.socket.io']
-      : ['http://localhost:5173', 'http://127.0.0.1:5173', 'https://admin.socket.io'],
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
   },

@@ -68,7 +68,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
     const contentType = mime.lookup(path);
     res.setHeader('Content-Type', contentType);
   }
-});
+}));
 
 // Handle file upload endpoint
 app.post('/upload', upload.single('file'), (req, res) => {

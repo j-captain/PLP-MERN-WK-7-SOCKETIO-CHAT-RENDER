@@ -7,20 +7,24 @@ export default function AuthPage({ onAuthSuccess }) {
   const handleAuth = async (username, password, isLogin) => {
     try {
       const endpoint = isLogin ? '/api/login' : '/api/register';
-      const response = await fetch(`http://localhost:5000${endpoint}`, {
+      // Updated to use production backend URL
+      const response = await fetch(`https://plp-mern-wk-7-socketio-chat-render.onrender.com${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
-        credentials: 'include'
+        credentials: 'include' // Keep this for session/cookie handling
       });
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || response.statusText);
       }
 
-      onAuthSuccess(username);
+      const data = await response.json();
+      onAuthSuccess(data.username || username);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Authentication failed');
+      console.error('Auth error:', err);
     }
   };
 

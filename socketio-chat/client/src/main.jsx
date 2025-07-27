@@ -4,32 +4,39 @@ import App from './App.jsx'
 import './index.css'
 import { io } from 'socket.io-client'
 
-// Create Socket.IO client connection
-const socket = io(import.meta.env.VITE_SERVER_URL || 'https://plp-mern-wk-5-web-sockets-1.onrender.com', {
+// Updated to use your current production backend URL
+const socket = io(import.meta.env.VITE_API_URL || 'https://plp-mern-wk-7-socketio-chat-render.onrender.com', {
   withCredentials: true,
-  autoConnect: false, // We'll manually connect after auth
+  autoConnect: false, // Maintained your manual connection approach
   reconnection: true,
   reconnectionAttempts: 5,
   reconnectionDelay: 1000,
-  transports: ['websocket']
+  transports: ['websocket', 'polling'], // Added polling as fallback
+  path: '/socket.io' // Explicit path to match server
 })
 
-// For development logging (remove in production)
+// Enhanced development logging
 if (import.meta.env.DEV) {
   socket.on('connect', () => {
     console.log('⚡️ WebSocket connected:', socket.id)
+    console.log('🔗 Connection URL:', socket.io.uri)
   })
 
-  socket.on('disconnect', () => {
-    console.log('⚠️ WebSocket disconnected')
+  socket.on('disconnect', (reason) => {
+    console.log('⚠️ WebSocket disconnected:', reason)
   })
 
   socket.on('connect_error', (err) => {
     console.error('❌ Connection error:', err.message)
+    console.error('🔄 Attempting reconnection...')
+  })
+
+  socket.on('reconnect', (attempt) => {
+    console.log(`♻️ Reconnected after ${attempt} attempts`)
   })
 }
 
-// Make socket available via React context if needed
+// Make socket available via React context
 export const SocketContext = React.createContext(socket)
 
 ReactDOM.createRoot(document.getElementById('root')).render(

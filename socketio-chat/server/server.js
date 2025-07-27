@@ -68,7 +68,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
     const contentType = mime.lookup(path);
     res.setHeader('Content-Type', contentType);
   }
-}));
+});
 
 // Handle file upload endpoint
 app.post('/upload', upload.single('file'), (req, res) => {
@@ -105,27 +105,21 @@ const colorful = {
 const activeUsers = new Map();
 const roomUsers = new Map();
 
-// Enhanced CORS configuration
+// MODIFIED: Enhanced CORS configuration to use environment variables
 const isProduction = process.env.NODE_ENV === 'production';
 const allowedOrigins = isProduction 
-  ? [
-      'https://plp-mern-wk-5-web-sockets.onrender.com',
-      'https://plp-mern-wk-5-web-sockets-frontend-4.onrender.com',
-      'https://admin.socket.io'
-    ]
-  : [
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
-      'https://admin.socket.io'
-    ];
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:5173', 'http://127.0.0.1:5173', 'https://admin.socket.io'];
 
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    
+    if (!origin && !isProduction) {
+      return callback(null, true);
+    }
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
+      console.log(colorful.error(`Blocked by CORS: ${origin}`));
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -282,7 +276,7 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Socket.IO setup
+// MODIFIED: Socket.IO setup with production-ready config
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
@@ -293,7 +287,8 @@ const io = new Server(server, {
     maxDisconnectionDuration: 2 * 60 * 1000,
     skipMiddlewares: true
   },
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  path: '/socket.io' // Explicit path for production
 });
 
 // Socket.IO middleware
@@ -616,18 +611,18 @@ io.on('connection', async (socket) => {
   });
 });
 
-// Admin UI
+// MODIFIED: Admin UI with environment variables
 instrument(io, {
   auth: {
     type: "basic",
-    username: "admin",
-    password: bcrypt.hashSync("password", 10)
+    username: process.env.ADMIN_USERNAME || "admin",
+    password: bcrypt.hashSync(process.env.ADMIN_PASSWORD || "password", 10)
   },
-  mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+  mode: isProduction ? 'production' : 'development',
   namespaceName: "/admin"
 });
 
-// Start the server
+// Start the server with production-ready config
 connectDB().then(async () => {
   await initializeDefaultRooms();
   

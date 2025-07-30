@@ -468,124 +468,340 @@ io.on('connection', async (socket) => {
     }
   });
 
-  // Enhanced message handling with file support
-  socket.on('sendMessage', async (message) => {
+  // Enhanced message handling with file support and read receipts
+socket.on('sendMessage', async (messageData) => {
     try {
-      const username = activeUsers.get(socket.id) || 'Anonymous';
-      const room = Array.from(socket.rooms).find(r => r !== socket.id);
-      
-      if (!room) {
-        console.log(colorful.warn(`⚠ User ${username} tried to send message without joining a room`));
-        return;
-      }
-      
-      const roomDoc = await Room.findOne({ name: room });
-      if (!roomDoc) {
-        console.log(colorful.error(`✗ Room ${room} not found in database`));
-        return;
-      }
-      
-      // Create message document with proper fields
-      const messageData = {
-        content: message.content,
-        room: roomDoc._id,
-        username: username,
-        time: new Date()
-      };
+        const username = activeUsers.get(socket.id);
+        if (!username) {
+            console.log(colorful.error('✗ Unauthenticated user tried to send message'));
+            return socket.emit('error', { message: 'Authentication required' });
+        }
+        
+        const roomName = Array.from(socket.rooms).find(r => r !== socket.id);
+        
+        if (!roomName) {
+            console.log(colorful.warn(`⚠ User ${username} tried to send message without joining a room`));
+            return socket.emit('error', { message: 'Join a room first' });
+        }
+        
+        const roomDoc = await Room.findOne({ name: roomName });
+        if (!roomDoc) {
+            console.log(colorful.error(`✗ Room ${roomName} not found in database`));
+            return socket.emit('error', { message: 'Room not found' });
+        }
+        
+        // Validate message content or file
+        if (!messageData.content && !messageData.file) {
+            console.log(colorful.error('✗ Empty message attempted'));
+            return socket.emit('error', { message: 'Message content or file required' });
+        }
 
-      // Add file information if present
-      if (message.file) {
-        messageData.file = {
-          url: message.file.url,
-          name: message.file.name,
-          type: message.file.type,
-          size: message.file.size
+        // Create message document according to your model
+        const message = {
+            content: messageData.content,
+            room: roomDoc._id,
+            roomName: roomName, // Added to match your model
+            username: username,
+            time: new Date()
         };
-        console.log(colorful.success(`✓ File attached: ${message.file.name}`));
-        console.log(colorful.debug(`⚡ File type: ${message.file.type}, size: ${message.file.size} bytes`));
-      }
-      
-      // Save message to database
-      const savedMessage = await Messsage.create(messageData);
-      
-      // Update room's last activity
-      roomDoc.lastActivity = new Date();
-      await roomDoc.save();
-      
-      // Emit message with consistent field names
-      const messageToEmit = {
-        _id: savedMessage._id,
-        username: username,
-        content: message.content,
-        time: savedMessage.time,
-        room: room
-      };
 
-      // Add file to emitted message if present
-      if (savedMessage.file) {
-        messageToEmit.file = savedMessage.file;
-        console.log(colorful.debug(`⚡ Sending file: ${savedMessage.file.url}`));
+        // Add file information if present
+        if (messageData.file) {
+            message.file = {
+                url: messageData.file.url,
+                name: messageData.file.name,
+                type: messageData.file.type,
+                size: messageData.file.size
+            };
+            console.log(colorful.success(`✓ File attached: ${messageData.file.name}`));
+        }
+        
+        // Save message to database
+        const savedMessage = await Message.create(message);
+        
+        // Update room's last activity
+        roomDoc.lastActivity = new Date();
+        await roomDoc.save();
+        
+        // Prepare message to emit with read receipts
+        const messageToEmit = {
+            _id: savedMessage._id,
+            username: username,
+            content: savedMessage.content,
+            time: savedMessage.time,
+            room: roomName,
+            roomName: roomName, // For consistency with your model
+            readBy: savedMessage.readBy || [] // Use the array from model
+        };
+
+        // Add file to emitted message if present
+        if (savedMessage.file) {
+            messageToEmit.file = savedMessage.file;
+        }
+        
+        // Update read receipts tracking (modified for your array storage)
+        if (!savedMessage.readBy.includes(username)) {
+            savedMessage.readBy.push(username);
+            await savedMessage.save();
+        }
+        
+        // Emit to room including sender (for consistency)
+        io.to(roomName).emit('message', messageToEmit);
+        
+        console.log(colorful.debug(`⚡ Message from ${username} in ${roomName}: ${messageData.content ? messageData.content.substring(0, 20) + '...' : 'File message'}`));
+    } catch (err) {
+        console.log(colorful.error(`✗ Message send error: ${err.message}`));
+        socket.emit('error', { message: 'Failed to send message' });
+    }
+});
+
+
+io.sockets.setMaxListeners(50); 
+
+// Update the read receipt handler to match your model
+socket.on('messageRead', async ({ messageId }) => {
+    try {
+        const username = activeUsers.get(socket.id);
+        if (!username) {
+            console.log(colorful.error('✗ Unauthenticated user tried to send read receipt'));
+            return;
+        }
+        
+        if (!messageId) {
+            console.log(colorful.error('✗ Empty messageId for read receipt'));
+            return;
+        }
+        
+        // Get the message to validate it exists
+        const message = await Message.findById(messageId);
+        if (!message) {
+            console.log(colorful.error(`✗ Message ${messageId} not found for read receipt`));
+            return;
+        }
+        
+        // Update read receipts (using your array storage)
+        if (!message.readBy.includes(username)) {
+            message.readBy.push(username);
+            await message.save();
+        }
+        
+        // Notify all clients in the room
+        const roomDoc = await Room.findById(message.room);
+        if (roomDoc) {
+            io.to(roomDoc.name).emit('readUpdate', {
+                messageId,
+                readBy: message.readBy
+            });
+        }
+        
+        console.log(colorful.debug(`⚡ Read receipt from ${username} for message ${messageId}`));
+    } catch (err) {
+        console.log(colorful.error(`✗ Read receipt error: ${err.message}`));
+    }
+});
+  // File download handler with proper MIME types
+  socket.on('downloadFile', ({ fileUrl, fileName, fileType }) => {
+    try {
+      console.log(colorful.debug(`⚡ File download requested: ${fileUrl}`));
+      
+      // Validate the file URL to prevent directory traversal
+      const normalizedPath = path.normalize(fileUrl).replace(/^(\.\.(\/|\\|$))+/g, '');
+      const fullPath = path.join(__dirname, 'uploads', normalizedPath);
+      
+      if (!fs.existsSync(fullPath)) {
+        console.log(colorful.error(`✗ File not found: ${fileUrl}`));
+        return socket.emit('error', { message: 'File not found' });
       }
       
-      io.to(room).emit('message', messageToEmit);
+      // Determine if we should open or download based on file type
+      const shouldOpen = [
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+        'video/mp4', 'video/webm', 'video/quicktime',
+        'audio/mpeg', 'audio/wav', 'audio/ogg',
+        'application/pdf'
+      ].includes(fileType);
       
-      console.log(colorful.debug(`⚡ Message from ${username} in ${room}: ${message.content ? message.content.substring(0, 20) + '...' : 'File message'}`));
+      socket.emit('fileAction', { 
+        action: shouldOpen ? 'open' : 'download',
+        url: fileUrl,
+        name: fileName,
+        type: fileType 
+      });
+      
+      console.log(colorful.success(`✓ File ${shouldOpen ? 'opened' : 'downloaded'}: ${fileUrl}`));
     } catch (err) {
-      console.log(colorful.error(`✗ Message send error: ${err.message}`));
+      console.log(colorful.error(`✗ File download error: ${err.message}`));
+      socket.emit('error', { message: 'File action failed' });
     }
   });
 
-  // File download handler
-  socket.on('downloadFile', ({ fileUrl, fileName, fileType }) => {
-    console.log(colorful.debug(`⚡ File download requested: ${fileUrl}`));
-    socket.emit('openFile', { 
-      url: fileUrl,
-      name: fileName,
-      type: fileType 
-    });
-    console.log(colorful.success(`✓ File opened: ${fileUrl}`));
+  // Message read receipt handler
+  socket.on('messageRead', async ({ messageId }) => {
+    try {
+      const username = activeUsers.get(socket.id);
+      if (!username) {
+        console.log(colorful.error('✗ Unauthenticated user tried to send read receipt'));
+        return;
+      }
+      
+      if (!messageId) {
+        console.log(colorful.error('✗ Empty messageId for read receipt'));
+        return;
+      }
+      
+      // Get the message to validate it exists
+      const message = await Message.findById(messageId);
+      if (!message) {
+        console.log(colorful.error(`✗ Message ${messageId} not found for read receipt`));
+        return;
+      }
+      
+      // Update read receipts
+      const receipts = readReceipts.get(messageId) || new Set();
+      receipts.add(username);
+      readReceipts.set(messageId, receipts);
+      
+      // Notify all clients in the room
+      const roomDoc = await Room.findById(message.room);
+      if (roomDoc) {
+        io.to(roomDoc.name).emit('readUpdate', {
+          messageId,
+          readBy: Array.from(receipts)
+        });
+      }
+      
+      console.log(colorful.debug(`⚡ Read receipt from ${username} for message ${messageId}`));
+    } catch (err) {
+      console.log(colorful.error(`✗ Read receipt error: ${err.message}`));
+    }
   });
+
+  // Message deletion handler
+ 
+        socket.on('deleteMessage', async ({ messageId, deleteForEveryone }) => {
+            try {
+                const username = activeUsers.get(socket.id);
+                if (!username) {
+                    console.log(colorful.error('✗ Unauthenticated user tried to delete message'));
+                    return socket.emit('error', { message: 'Authentication required' });
+                }
+                
+                const message = await Message.findById(messageId);
+                if (!message) {
+                    console.log(colorful.error(`✗ Message ${messageId} not found`));
+                    return socket.emit('error', { message: 'Message not found' });
+                }
+                
+                // Check if user is the sender or has admin privileges
+                const canDeleteForEveryone = message.username === username || isAdmin(username);
+                
+                if (deleteForEveryone && !canDeleteForEveryone) {
+                    console.log(colorful.error(`✗ User ${username} tried to delete message for everyone without permission`));
+                    return socket.emit('error', { message: 'Not authorized for this action' });
+                }
+                
+                const room = await Room.findById(message.room);
+                if (!room) {
+                    console.log(colorful.error(`✗ Room not found for message ${messageId}`));
+                    return socket.emit('error', { message: 'Room not found' });
+                }
+                
+                if (deleteForEveryone) {
+                    // Delete for everyone - remove from database
+                    await Message.deleteOne({ _id: messageId });
+                    readReceipts.delete(messageId);
+                    console.log(colorful.success(`✓ Message ${messageId} deleted for everyone by ${username}`));
+                } else {
+                    // Delete for sender only - mark as deleted
+                    message.deletedFor = message.deletedFor || [];
+                    if (!message.deletedFor.includes(username)) {
+                        message.deletedFor.push(username);
+                        await message.save();
+                    }
+                    console.log(colorful.success(`✓ Message ${messageId} deleted for sender ${username}`));
+                }
+                
+                // Enhanced notification with more details
+                io.to(room.name).emit('messageDeleted', {
+                    messageId,
+                    deletedForEveryone,
+                    deletedBy: username,
+                    deletedFor: deleteForEveryone ? [] : message.deletedFor,
+                    timestamp: new Date()
+                });
+                
+            } catch (err) {
+                console.log(colorful.error(`✗ Message deletion error: ${err.message}`));
+                socket.emit('error', { 
+                    message: 'Failed to delete message',
+                    details: err.message 
+                });
+            }
+        });
 
   // Typing indicators
   socket.on('typing', ({ room }) => {
-    const username = activeUsers.get(socket.id) || 'Anonymous';
+    const username = activeUsers.get(socket.id);
+    if (!username) return;
+    
     io.to(room).emit('typing', { username, room });
     console.log(colorful.debug(`⚡ ${username} is typing in ${room}`));
   });
 
   socket.on('stopTyping', ({ room }) => {
-    const username = activeUsers.get(socket.id) || 'Anonymous';
+    const username = activeUsers.get(socket.id);
+    if (!username) return;
+    
     io.to(room).emit('stopTyping', { username, room });
     console.log(colorful.debug(`⚡ ${username} stopped typing in ${room}`));
   });
 
-  // Disconnection handler
+  // Disconnection handler with cleanup
   socket.on('disconnect', (reason) => {
     const username = activeUsers.get(socket.id);
     if (username) {
       console.log(colorful.warn(`⚠ User ${username} disconnected: ${reason}`));
       
-      // Remove user from all rooms
-      roomUsers.forEach((users, room) => {
-        if (users.has(username)) {
-          users.delete(username);
-          if (users.size === 0) {
-            roomUsers.delete(room);
-          } else {
-            roomUsers.set(room, users);
-          }
-          console.log(colorful.debug(`⚡ User ${username} was removed from room ${room}`));
+      // Remove socket from user's sockets
+      if (userSockets.has(username)) {
+        const sockets = userSockets.get(username);
+        sockets.delete(socket.id);
+        
+        // If this was the last socket for the user, remove from rooms
+        if (sockets.size === 0) {
+          userSockets.delete(username);
+          
+          // Remove user from all rooms
+          roomUsers.forEach((users, room) => {
+            if (users.has(username)) {
+              users.delete(username);
+              if (users.size === 0) {
+                roomUsers.delete(room);
+              } else {
+                roomUsers.set(room, users);
+              }
+              
+              // Notify remaining users in the room
+              io.to(room).emit('userLeft', {
+                username,
+                userCount: users.size
+              });
+              
+              console.log(colorful.debug(`⚡ User ${username} was removed from room ${room}`));
+            }
+          });
         }
-      });
+      }
       
       activeUsers.delete(socket.id);
       
       // Update room list for remaining users
-      Room.find().then(rooms => {
+      Room.find().sort({ lastActivity: -1 }).then(rooms => {
         const roomList = rooms.map(r => ({
           name: r.name,
           userCount: roomUsers.get(r.name)?.size || 0,
-          topic: r.topic
+          topic: r.topic,
+          lastActivity: r.lastActivity
         }));
         io.emit('roomList', roomList);
       });

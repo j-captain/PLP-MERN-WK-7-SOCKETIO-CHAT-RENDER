@@ -11,22 +11,31 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AuthPage from './pages/AuthPage';
 import ChatPage from './pages/ChatPage';
 import { SocketProvider } from './context/SocketContext';
+import './styles/Header.css';
+import './styles/Footer.css';
+import './styles/Layout.css';
 
 function Header({ user, onLogout }) {
   return (
-    <header className="w-full bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-lg">
-      <div className="w-full max-w-6xl mx-auto py-6 px-4 flex flex-col items-center">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <span className="animate-bounce">💬</span>
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-200 to-amber-400">
-            My Chat App
-          </span>
-        </h1>
-        {user && (
-          <div className="mt-2 text-sm text-blue-100">
-            Welcome, {user.username}!
-          </div>
-        )}
+    <header className="header">
+      <div className="header-container">
+        <div className="header-content">
+          <h1 className="app-title">
+            <span className="header-emoji">💬</span>
+            <span className="app-name">Enhanced SocketIO Chat App</span>
+          </h1>
+          {user && (
+            <div className="welcome-message">
+              Welcome, <span className="username">{user.username}</span>!
+              <button 
+                onClick={onLogout}
+                className="logout-button"
+              >
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
@@ -34,18 +43,36 @@ function Header({ user, onLogout }) {
 
 function Footer() {
   return (
-    <footer className="w-full bg-gradient-to-r from-gray-800 to-gray-900 text-gray-300">
-      <div className="w-full max-w-6xl mx-auto py-6 px-4 text-center">
-        <div className="flex justify-center items-center gap-4 mb-2">
-          <span className="h-px w-16 bg-gray-600"></span>
-          <span className="text-xs">CONNECT • SHARE • CHAT</span>
-          <span className="h-px w-16 bg-gray-600"></span>
+    <footer className="footer">
+      <div className="footer-container">
+        <div className="footer-content">
+          <div className="footer-divider">
+            <span className="divider-line"></span>
+            <span className="divider-text"></span>
+             <a href="#" className="divider-text">Connect • Share • Chat</a>
+            <span className="divider-line"></span>
+          </div>
+          
+          <div className="footer-info">
+            <p className="copyright">
+              © {new Date().getFullYear()} Enhanced SocketIO Chat App. All rights reserved.
+            </p>
+            <div className="footer-links">
+              <a href="https://github.com/j-captain" className="footer-link">Contact Developer</a>
+            </div>
+            <p className="footer-message">
+              Made with ❤️ for seamless communication
+            </p>
+            <div className="designer-credit">
+              <a 
+                href="https://j-captain.github.io/PLP-HACKERTHON-KARANJA-PORTFOLIO/" 
+                className="designer-link"
+              >
+                Designed by Mwangi Josphat Karanja
+              </a>
+            </div>
+          </div>
         </div>
-        <p className="text-sm">
-          My Chat App.© {new Date().getFullYear()}. All rights reserved.
-        </p>
-        <p className="text-xs mt-1 text-gray-500">Made with ❤️ for seamless communication</p>
-         <p className="text-xs mt-1 text-gray-500">Designed by Mwangi Josphat Karanja</p>
       </div>
     </footer>
   );
@@ -53,9 +80,9 @@ function Footer() {
 
 function Layout({ children, user, onLogout }) {
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="layout">
       <Header user={user} onLogout={onLogout} />
-      <main className="flex-grow w-full max-w-6xl mx-auto p-6">
+      <main className="main-content">
         {children}
       </main>
       <Footer />
@@ -102,7 +129,7 @@ function App() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
                     transition={{ duration: 0.4 }}
-                    className="w-full"
+                    className="route-container"
                   >
                     <AuthPage onAuthSuccess={handleAuthSuccess} />
                   </motion.div>
@@ -118,7 +145,7 @@ function App() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
                     transition={{ duration: 0.4 }}
-                    className="w-full"
+                    className="route-container"
                   >
                     <ChatPage username={user.username} onLogout={handleLogout} />
                   </motion.div>
